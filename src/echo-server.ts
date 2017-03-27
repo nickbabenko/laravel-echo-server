@@ -27,6 +27,7 @@ export class EchoServer {
         host: 'http://localhost',
         port: 6001,
         referrers: [],
+        domains: [],
         sslCertPath: '',
         sslKeyPath: ''
     };
@@ -80,13 +81,19 @@ export class EchoServer {
     run(options: any): void {
         this.options = Object.assign(this.defaultOptions, options);
         this.startup();
-        this.server = new Server(this.options);
+        this.options.donains.forEach((domain:string) => {
+            let options = Object.create(this.options);
+            options.domain = domain;
+            options.sslCertPath = this.options.sslCertPath + domain + '.crt';
+            options.sslKeyPath = this.options.sslKeyPath + domain + '.key';
+            this.server = new Server(options);
 
-        this.server.init().then(io => {
-            this.init(io).then(() => {
-                Log.info('\nServer ready!\n');
+            this.server.init().then(io => {
+                this.init(io).then(() => {
+                    Log.info('\nServer ready!\n');
+                }, error => Log.error(error));
             }, error => Log.error(error));
-        }, error => Log.error(error));
+        });
     }
 
     /**
