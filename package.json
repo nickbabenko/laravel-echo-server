@@ -17,9 +17,9 @@
     "esversion": 6
   },
   "scripts": {
-    "compile": "tsc",
-    "compile watch": "tsc -w",
-    "prepublish": "npm run compile"
+    "build": "tsc",
+    "dev": "tsc -w",
+    "prepublish": "npm run build"
   },
   "dependencies": {
     "colors": "^1.1.2",
