@@ -18,8 +18,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc -w",
-    "install": "npm run build"
+    "dev": "tsc -w"
   },
   "dependencies": {
     "colors": "^1.1.2",
