@@ -2,13 +2,27 @@ let fs = require('fs');
 let colors = require("colors");
 let echo = require('./../../dist');
 let inquirer = require('inquirer');
-
+const crypto = require('crypto');
 const CONFIG_FILE = process.cwd() + '/laravel-echo-server.json';
 
 /**
  * Laravel Echo Server CLI
  */
 export class Cli {
+    /**
+     * Default config options.
+     *
+     * @type {any}
+     */
+    defaultOptions: any;
+
+    /**
+     * Create new CLI instance.
+     */
+    constructor() {
+        this.defaultOptions = echo.defaultOptions;
+    }
+
     /**
      * Initialize server with a configuration file.
      *
@@ -17,8 +31,18 @@ export class Cli {
      */
     init(yargs) {
         this.setupConfig().then((options) => {
-            options = Object.assign(echo.defaultOptions, options);
-            options.appKey = this.createAppKey();
+            options = Object.assign({}, this.defaultOptions, options);
+
+            if (options.addClient) {
+                let client = {
+                    appId: this.createAppId(),
+                    key: this.createApiKey()
+                };
+                options.clients.push(client);
+
+                console.log('appId: ' + colors.magenta(client.appId));
+                console.log('key: ' + colors.magenta(client.key));
+            }
 
             this.saveConfig(options).then(() => {
                 console.log('Configuration file saved. Run ' + colors.magenta.bold('laravel-echo-server start') + ' to run server.');
@@ -36,10 +60,13 @@ export class Cli {
      * @return {Promise}
      */
     setupConfig() {
-        return inquirer.prompt([{
-            name: 'host',
-            message: 'Enter the host for the server.'
-        }, {
+        return inquirer.prompt([
+            {
+                name: 'devMode',
+                default: false,
+                message: 'Do you want to run this server in development mode?',
+                type: 'confirm'
+            }, {
                 name: 'port',
                 default: '6001',
                 message: 'Which port would you like to serve from?'
@@ -49,25 +76,9 @@ export class Cli {
                 type: 'list',
                 choices: ['redis', 'sqlite']
             }, {
-                name: 'verifyAuthServer',
-                message: 'Will you be authenticating users from a different host?',
-                type: 'confirm'
-            }, {
                 name: 'authHost',
-                message: 'Enter the host of your authentication server.',
-                when: function(options) {
-                    return options.verifyAuthServer;
-                }
-            }, {
-                name: 'verifyAuthPath',
-                message: 'Is this the right endpoint for authentication /broadcasting/auth?',
-                type: 'confirm'
-            }, {
-                name: 'authPath',
-                message: 'Enter the path to send authentication requests to.',
-                when: function(options) {
-                    return !options.verifyAuthPath;
-                }
+                default: 'http://localhost',
+                message: 'Enter the host of your Laravel authentication server.',
             }, {
                 name: 'protocol',
                 message: 'Will you be serving on http or https?',
@@ -85,7 +96,13 @@ export class Cli {
                 when: function(options) {
                     return options.protocol == 'https';
                 }
-            }]);
+            }, {
+                name: 'addClient',
+                default: false,
+                message: 'Do you want to generate a client ID/Key for HTTP API?',
+                type: 'confirm'
+            }
+        ]);
     }
 
     /**
@@ -97,11 +114,9 @@ export class Cli {
     saveConfig(options): Promise<any> {
         let opts = {};
 
-        Object.keys(options).filter(function(k) {
-            return Object.keys(echo.defaultOptions).indexOf(k) >= 0;
-        }).sort().forEach((option, i, arr) => {
-            opts[option] = options[option];
-        });
+        Object.keys(options).filter(k => {
+            return Object.keys(this.defaultOptions).indexOf(k) >= 0;
+        }).forEach(option => opts[option] = options[option]);
 
         return new Promise((resolve, reject) => {
             if (opts) {
@@ -122,15 +137,19 @@ export class Cli {
      * @return {void}
      */
     start(yargs): void {
-        fs.access(CONFIG_FILE, fs.F_OK, (error) => {
+        let dir = yargs.argv.dir ? yargs.argv.dir.replace(/\/?$/, '/') : null;
+        let configFile = dir ? dir + 'laravel-echo-server.json' : CONFIG_FILE;
+
+        fs.access(configFile, fs.F_OK, (error) => {
             if (error) {
                 console.error(colors.error('Error: laravel-echo-server.json file not found.'));
 
                 return false;
             }
 
-            var options = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-            options.devMode = yargs.argv.dev || false;
+            var options = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+
+            options.devMode = yargs.argv.dev || options.devMode || false;
 
             echo.run(options);
         });
@@ -141,37 +160,26 @@ export class Cli {
      *
      * @return {string}
      */
-    createAppKey(): string {
-        return Math.random().toString(31).substring(7).slice(0, 60);
+    getRandomString(bytes: number): string {
+        return crypto.randomBytes(bytes).toString('hex');
     }
 
     /**
-     * Generate an app key and save to config.
+     * Create an api key for the HTTP API.
      *
-     * @return {void}
-     */
-    keyGenerate(): void {
-        var key = this.createAppKey();
-        var options = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        options.appKey = key;
-
-        this.saveConfig(options);
-    }
-
-    /**
-     * Create an api key for a referrer.
-     *
-     * @param  {string} app_key
      * @return {string}
      */
-    createApiKey(app_key: string): string {
-        var hash = Math.random().toString(31).substring(7).slice(0, 60);
-        let api_key = hash.concat(app_key);
-        api_key = api_key.split('')
-            .sort(() => 0.5 - Math.random())
-            .join('').slice(0, 60);
+    createApiKey(): string {
+        return this.getRandomString(16);
+    }
 
-        return api_key;
+    /**
+     * Create an api key for the HTTP API.
+     *
+     * @return {string}
+     */
+    createAppId(): string {
+        return this.getRandomString(8);
     }
 
     /**
@@ -180,32 +188,37 @@ export class Cli {
      * @param  {Object} yargs
      * @return {void}
      */
-    referrerAdd(yargs): void {
+    clientAdd(yargs): void {
         var options = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        var host = yargs.argv._[1] || null;
-        options.referrers = options.referrers || [];
+        var appId = yargs.argv._[1] || this.createAppId();
+        options.clients = options.clients || [];
 
-        if (host && options.appKey) {
+        if (appId) {
             var index = null;
-            var referrer = options.referrers.find((referrer, i) => {
+            var client = options.clients.find((client, i) => {
                 index = i;
-                return referrer.host == host;
+                return client.appId == appId;
             });
 
-            if (referrer) {
-                referrer.apiKey = this.createApiKey(options.appKey);
-                options.referrers[index] = referrer;
+            if (client) {
+                client.key = this.createApiKey();
+
+                options.clients[index] = client;
+
+                console.log(colors.green('API Client updated!'));
             } else {
-                referrer = {
-                    host: host,
-                    apiKey: this.createApiKey(options.appKey)
+                client = {
+                    appId: appId,
+                    key: this.createApiKey()
                 };
 
-                options.referrers.push(referrer);
+                options.clients.push(client);
+
+                console.log(colors.green('API Client added!'));
             }
 
-            console.log(colors.green('Referrer added: ' + host));
-            console.log(colors.green('API Key: ' + referrer.apiKey))
+            console.log(colors.magenta('appId: ' + client.appId));
+            console.log(colors.magenta('key: ' + client.key))
 
             this.saveConfig(options);
         }
@@ -217,22 +230,23 @@ export class Cli {
      * @param  {Object} yargs
      * @return {void}
      */
-    referrerRemove(yargs): void {
+    clientRemove(yargs): void {
         var options = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        var host = yargs.argv._[1] || null;
-        options.referrers = options.referrers || [];
+        var appId = yargs.argv._[1] || null;
+        options.clients = options.clients || [];
 
         var index = null;
-        var referrer = options.referrers.find((referrer, i) => {
+
+        var client = options.clients.find((client, i) => {
             index = i;
-            return referrer.host == host;
+            return client.appId == appId;
         });
 
         if (index >= 0) {
-            options.referrers.splice(index, 1);
+            options.clients.splice(index, 1);
         }
 
-        console.log(colors.green('Referrer removed: ' + host));
+        console.log(colors.green('Client removed: ' + appId));
 
         this.saveConfig(options);
     }

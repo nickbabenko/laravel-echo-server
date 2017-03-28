@@ -6,35 +6,33 @@ export class HttpSubscriber implements Subscriber {
     /**
      * Create new instance of http subscriber.
      *
-     * @param  {any} http
+     * @param  {any} express
      */
-    constructor(private options, private http) { }
+    constructor(private express, private options) { }
 
     /**
      * Subscribe to events to broadcast.
      *
      * @return {void}
      */
-    subscribe(callback): void {
-        this.http.on('request', (req, res) => {
-            let body: any = [];
+    subscribe(callback): Promise<any> {
+        return new Promise((resolve, reject) => {
 
-            if (req.method == 'POST' && url.parse(req.url).pathname == '/broadcast') {
-                if (!this.canAccess(req)) {
-                    return this.unauthorizedResponse(req, res);
-                }
+            // Broadcast a message to a channel
+            this.express.post('/apps/:appId/events', (req, res) => {
+                let body: any = [];
+                res.on('error', (error) => {
+                    Log.error(error);
+                });
 
-                res.on('error', (error) => Log.error(error));
                 req.on('data', (chunk) => body.push(chunk))
                     .on('end', () => this.handleData(req, res, body, callback));
-            } else {
-                if (url.parse(req.url).pathname != '/socket.io/') {
-                    res.end();
-                }
-            }
-        });
+            })
 
-        Log.success('Listening for http events...');
+            Log.success('Listening for http events...');
+
+            resolve();
+        });
     }
 
     /**
@@ -49,85 +47,35 @@ export class HttpSubscriber implements Subscriber {
     handleData(req, res, body, broadcast): boolean {
         body = JSON.parse(Buffer.concat(body).toString());
 
-        if (body.channel && body.message) {
-            if (!broadcast(body.channel, body.message)) {
-                return this.badResponse(
-                    req,
-                    res,
-                    `Could not broadcast to channel: ${body.channel}`
-                );
+        if ((body.channels || body.channel) && body.name && body.data) {
+
+            var data = body.data;
+            try {
+                data = JSON.parse(data);
+            } catch (e) {}
+
+            var message = {
+                event: body.name,
+                data: data,
+                socket: body.socket_id
             }
+            var channels = body.channels || [body.channel];
+
+            if (this.options.devMode) {
+                Log.info("Channel: " + channels.join(', '));
+                Log.info("Event: " + message.event);
+            }
+
+            channels.forEach(channel => broadcast(channel, message));
         } else {
             return this.badResponse(
                 req,
                 res,
-                'Event must include channel and message'
+                'Event must include channel, event name and data'
             );
         }
 
-        res.write(JSON.stringify({ message: 'ok' }))
-        res.end();
-    }
-
-    /**
-     * Check is an incoming request can access the api.
-     *
-     * @param  {any} req
-     * @return {boolean}
-     */
-    canAccess(req: any): boolean {
-        if (this.options.host == req.headers.referer) {
-            return true;
-        }
-
-        let api_key = this.getApiToken(req);
-
-        if (api_key) {
-            let referrer = this.options.referrers.find((referrer) => {
-                return referrer.apiKey == api_key;
-            });
-
-            if (referrer && (referrer.host == '*' ||
-                referrer.host == req.headers.referer)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Get the api token from the request.
-     *
-     * @param  {any} req
-     * @return {string}
-     */
-    getApiToken(req: any): (string | boolean) {
-        if (req.headers.authorization) {
-            return req.headers.authorization.replace('Bearer ', '');
-        }
-
-        if (url.parse(req.url, true).query.api_key) {
-            return url.parse(req.url, true).query.api_key
-        }
-
-        return false;
-
-    }
-
-    /**
-     * Handle unauthoried requests.
-     *
-     * @param  {any} req
-     * @param  {any} res
-     * @return {boolean}
-     */
-    unauthorizedResponse(req: any, res: any): boolean {
-        res.statusCode = 403;
-        res.write(JSON.stringify({ error: 'Unauthorized' }));
-        res.end();
-
-        return false;
+        res.json({ message: 'ok' })
     }
 
     /**
@@ -140,8 +88,7 @@ export class HttpSubscriber implements Subscriber {
      */
     badResponse(req: any, res: any, message: string): boolean {
         res.statusCode = 400;
-        res.write(JSON.stringify({ error: message }));
-        res.end();
+        res.json({ error: message });
 
         return false;
     }

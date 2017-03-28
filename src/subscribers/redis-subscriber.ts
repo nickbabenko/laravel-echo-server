@@ -12,6 +12,8 @@ export class RedisSubscriber implements Subscriber {
 
     /**
      * Create a new instance of subscriber.
+     *
+     * @param {any} options
      */
     constructor(private options) {
         this._redis = new Redis(options.databaseConfig.redis);
@@ -20,16 +22,36 @@ export class RedisSubscriber implements Subscriber {
     /**
      * Subscribe to events to broadcast.
      *
-     * @return {void}
+     * @return {Promise<any>}
      */
-    subscribe(callback): void {
-        this._redis.psubscribe('*', (err, count) => { });
-        this._redis.on('pmessage', (subscribed, channel, message) => {
-            message = JSON.parse(message);
+    subscribe(callback): Promise<any> {
 
-            callback(channel, message);
+        return new Promise((resolve, reject) => {
+            this._redis.on('pmessage', (subscribed, channel, message) => {
+                try {
+                    message = JSON.parse(message);
+
+                    if (this.options.devMode) {
+                        Log.info("Channel: " + channel);
+                        Log.info("Event: " + message.event);
+                    }
+
+                    callback(channel, message);
+                    console.log('CHANNEL', channel)
+                } catch (e) {
+                    Log.info("No JSON message");
+                }
+            });
+
+            this._redis.psubscribe('*', (err, count) => {
+                if (err) {
+                    reject('Redis could not subscribe.')
+                }
+
+                Log.success('Listening for redis events...');
+
+                resolve();
+            });
         });
-
-        Log.success('Listening for redis events...');
     }
 }

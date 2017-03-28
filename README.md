@@ -33,33 +33,21 @@ $   laravel-echo-server init
 
 ```
 
-The cli tool will help you setup a **laravel-echo-sever.json** file in the root directory of your project. This file will be loaded by the server during start up. You may edit this file later on to manage the configuration of your server.
+The cli tool will help you setup a **laravel-echo-server.json** file in the root directory of your project. This file will be loaded by the server during start up. You may edit this file later on to manage the configuration of your server.
 
-#### App Key
+#### API Clients
 
-After initial configuration, an app key will be stored in the **laravel-echo-server.json** file, app key is required to perform certain actions on the server.
-
-To generate a new app key, use the cli command:
+The Laravel Echo Server exposes a light http API to perform broadcasting functionality. For security purposes, access to these endpoints from http referrers must be authenticated with an API id and key. This can be generated using the cli command:
 
 ``` shell
 
-$ laravel-echo-server key:generate
+$ laravel-echo-server client:add APP_ID
 
 ```
 
-#### Referrers
+If you run `client:add` without an app id argument, one will be generated for you. After running this command, the client id and key will be displayed and stored in the **laravel-echo-server.json** file.
 
-The Laravel Echo Server exposes a light http Api to perform broadcasting functionality. For security purposes, access to these endpoints from http referrers other than the server's host must be registered. This can be done using the cli command:
-
-``` shell
-
-$ laravel-echo-server referrer:add example.com
-
-```
-
-After running this command, an Api key for the referrer will be displayed and stored in the **laravel-echo-server.json** file.
-
-In this example, requests from example.com will be allowed as long as the referrer's api_key is provided with http requests.
+In this example, requests will be allowed as long as the app id and key are both provided with http requests.
 
 ``` http
 Request Headers
@@ -68,9 +56,11 @@ Auhtorization:  Bearer skti68i...
 
 or
 
-http://app.dev:6001/broadcast?api_key=skti68i...
+http://app.dev:6001/apps/APP_ID/events?auth_key=skti68i...
 
 ```
+
+You can remove clients with `laravel-echo-server client:remove APP_ID`
 
 #### Run The Server
 
@@ -87,19 +77,18 @@ $ laravel-echo-server start
 Edit the default configuration of the server by adding options to your **laravel-echo-server.json** file.
 
 
-| Title            | Default              | Description |
-| :--------------- | :------------------- | :-----------|
-| `appKey`         | `''`                 | Unique app key used in security implementations |
+| Title            | Default              | Description                 |
+| :--------------- | :------------------- | :---------------------------|
 | `authEndpoint`   | `/broadcasting/auth` | The route that authenticates private channels  |
 | `authHost`       | `http://localhost`   | The host of the server that authenticates private and presence channels  |
 | `database`       | `redis`              | Database used to store data that should persist, like presence channel members. Options are currently `redis` and `sqlite` |
-| `databaseConfig` |  `{}`                |  Configurations for the different database drivers [Example](#database)|
-| `host`           | `http://localhost`   | The host of the socket.io server ex.`app.dev` |
+| `databaseConfig` |  `{}`                | Configurations for the different database drivers [Example](#database)|
+| `host`           | `null`               | The host of the socket.io server ex.`app.dev`. `null` will accept connections on any IP-address |
 | `port`           | `6001`               | The port that the socket.io server should run on |
 | `protocol`       | `http`               | either `http` or `https` |
-| `referrers`      | `{}`                 | Please see [Referrers](#referrers) |
 | `sslCertPath`    | `''`                 | The path to your server's ssl certificate |
 | `sslKeyPath`     | `''`                 | The path to your server's ssl key |
+| `socketio`       | `{}`                 | Options to pass to the socket.io instance ([available options](https://github.com/socketio/engine.io#methods-1)) |
 
 ### Running with SSL
 
@@ -118,13 +107,13 @@ The Laravel Echo Server subscribes to incoming events with two methods: Redis & 
 
 ### Http
 
-Using Http, you can also publish events to the Laravel Echo Server in the same fashion you would with Redis by submitting a `channel` and `message` to the broadcast endpoint.
+Using Http, you can also publish events to the Laravel Echo Server in the same fashion you would with Redis by submitting a `channel` and `message` to the broadcast endpoint. You need to generate an API key as described in the [API Clients](#api-clients) section and provide the correct API key.
 
 **Request Endpoint**
 
 ``` http
 
-POST http://app.dev:6001/broadcast
+POST http://app.dev:6001/apps/your-app-id/events?auth_key=skti68i...
 
 ```
 
@@ -134,23 +123,66 @@ POST http://app.dev:6001/broadcast
 
 {
   "channel": "channel-name",
-  "message": {
-    "event":"event-name",
-    "data": {
-       "key": "value"
-     },
-     "socket": "h3nAdb134tbvqwrg"
-   }
+  "name": "event-name",
+  "data": {
+      "key": "value"
+  },
+  "socket_id": "h3nAdb134tbvqwrg"
 }
 
 ```
 
-**Channel Name** - The name of the channel to broadcast an event to. For private or presence channels prepend `private-` or `presence-`.
+**channel** - The name of the channel to broadcast an event to. For private or presence channels prepend `private-` or `presence-`.
+**channels** - Instead of a single channel, you can broadcast to an array of channels with 1 request.
+**name** - A string that represents the event key within your app.
+**data** - Data you would like to broadcast to channel.
+**socket_id (optional)** - The socket id of the user that initiated the event. When present, the server will only "broadcast to others".
 
- **Message** - Object containing information about the event.
- *   **event** - A string that represents the event key within your app.
- *   **data** - Data you would like to broadcast to channel.
- *   **socket (optional)** - The socket id of the user that initiated the event. When present, the server will only "broadcast to others".
+### Pusher
+
+The HTTP subscriber is compatible with the Laravel Pusher subscriber. Just configure the host and port for your Socket.IO server and set the app id and key in config/broadcasting.php. Secret is not required.
+
+```php
+ 'pusher' => [
+    'driver' => 'pusher',
+    'key' => env('PUSHER_KEY'),
+    'secret' => null,
+    'app_id' => env('PUSHER_APP_ID'),
+    'options' => [
+        'host' => 'localhost',
+        'port' => 6001,
+    ],
+],
+```
+
+You can now send events using HTTP, without using Redis. This also allows you to use the Pusher API to list channels/users as described in the [Pusher PHP library](https://github.com/pusher/pusher-http-php)
+
+## HTTP API
+The HTTP API exposes endpoints that allow you to gather information about your running server and channels.
+
+**Status**
+Get total number of clients, uptime of the server, and memory usage.
+
+``` http
+GET /apps/:APP_ID/status
+```
+**Channels**
+List of all channels.
+
+``` http
+GET /apps/:APP_ID/channels
+```
+**Channel**
+Get information about a particular channel.
+
+``` http
+GET /apps/:APP_ID/channels/:CHANNEL_NAME
+```
+**Channel Users**
+List of users on a channel.
+``` http
+GET /apps/:APP_ID/channels/:CHANNEL_NAME/users
+```
 
 ## Database
 
@@ -167,12 +199,14 @@ For example, if you wanted to pass a custom configuration to Redis:
   "databaseConfig" : {
     "redis" : {
       "port": "3001",
-      "host": "http://redis.app.dev"
+      "host": "redis.app.dev"
     }
   }
 }
 
 ```
+*Note: No scheme (http/https etc) should be used for the host address*
+
 *A full list of Redis options can be found [here](https://github.com/luin/ioredis/blob/master/API.md#new-redisport-host-options).*
 
 ### SQLite
@@ -198,11 +232,30 @@ While presence channels contain a list of users, there will be instances where a
 
 ## Client Side Configuration
 
-See the official Laravel documentation for more information. <https://laravel.com/docs/5.3/broadcasting#introduction>
+See the official Laravel documentation for more information. <https://laravel.com/docs/master/broadcasting#introduction>
 
 ### Tips
-
+#### Socket.io client library
 You can include the socket.io client library from your running server. For example, if your server is running at `app.dev:6001` you should be able to
 add a script tag to your html like so:
 
-`<script src="//app.dev:6001/socket.io/socket.io.js"></script>`
+```
+
+<script src="//app.dev:6001/socket.io/socket.io.js"></script>
+
+```
+
+_Note: When using the socket.io client library from your running server, remember to check that the `io` global variable is defined before subscribing to events._ 
+
+#### Better performance with [µWebSockets](https://github.com/uWebSockets/uWebSockets)
+For extra performance, you can use the faster `uws` engine instead of `ws`, by setting the `wsEngine` option for Socket.IO in `laravel-echo-server.json`:
+
+```js
+
+"socketio": {
+    "wsEngine": "uws"
+}
+
+```
+
+See <https://github.com/uWebSockets/uWebSockets> for more information.
