@@ -81,9 +81,20 @@ export class EchoServer {
     run(options: any): void {
         this.options = Object.assign(this.defaultOptions, options);
         this.startup();
-        this.options.donains.forEach((domain:string) => {
+        this.options.domains.forEach((domain:any) => {
             let options = Object.create(this.options);
-            options.domain = domain;
+
+            if (typeof domain === 'object' &&
+                typeof domain.port === 'number' &&
+                typeof domain.domain === 'string') {
+                options.port = domain.port;
+                options.domain = domain.domain;
+            } else if (typeof domain === 'string') {
+                options.domain = domain;
+            } else {
+                throw 'Invalid domain configuration';
+            }
+
             options.sslCertPath = this.options.sslCertPath + domain + '.crt';
             options.sslKeyPath = this.options.sslKeyPath + domain + '.key';
             this.server = new Server(options);
