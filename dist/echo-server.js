@@ -49,8 +49,8 @@ var EchoServer = (function () {
                 else {
                     throw 'Invalid domain configuration';
                 }
-                options.sslCertPath = _this.options.sslCertPath + domain + '.crt';
-                options.sslKeyPath = _this.options.sslKeyPath + domain + '.key';
+                options.sslCertPath = _this.options.sslCertPath + options.domain + '.crt';
+                options.sslKeyPath = _this.options.sslKeyPath + options.domain + '.key';
                 _this.server = new server_1.Server(options);
                 _this.server.init().then(function (io) {
                     _this.init(io).then(function () {
