@@ -108,8 +108,8 @@ export class EchoServer {
                     throw 'Invalid domain configuration';
                 }
 
-                options.sslCertPath = this.options.sslCertPath + domain + '.crt';
-                options.sslKeyPath = this.options.sslKeyPath + domain + '.key';
+                options.sslCertPath = this.options.sslCertPath + options.domain + '.crt';
+                options.sslKeyPath = this.options.sslKeyPath + options.domain + '.key';
                 this.server = new Server(options);
 
                 this.server.init().then(io => {
