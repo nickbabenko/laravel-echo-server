@@ -55,8 +55,6 @@ export class EchoServer {
      * @return {Promise}
      */
     run(options: any): Promise<any> {
-
-        
         return new Promise((resolve, reject) => {
             this.options = Object.assign(this.defaultOptions, options);
             this.startup();
@@ -79,6 +77,12 @@ export class EchoServer {
                 options.sslKeyPath = this.options.sslKeyPath + options.domain + '.key';
 
                 this.domains[options.domain] = new Domain(options);
+
+                count++;
+
+                if (count == this.options.domains.length) {
+                    resolve();
+                }
             });
         });
     }

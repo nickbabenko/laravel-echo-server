@@ -50,6 +50,10 @@ var EchoServer = (function () {
                 options.sslCertPath = _this.options.sslCertPath + options.domain + '.crt';
                 options.sslKeyPath = _this.options.sslKeyPath + options.domain + '.key';
                 _this.domains[options.domain] = new domain_1.Domain(options);
+                count++;
+                if (count == _this.options.domains.length) {
+                    resolve();
+                }
             });
         });
     };
