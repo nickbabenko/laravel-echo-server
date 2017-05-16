@@ -77,12 +77,13 @@ export class EchoServer {
                 options.sslKeyPath = this.options.sslKeyPath + options.domain + '.key';
 
                 this.domains[options.domain] = new Domain(options);
-
-                count++;
-
-                if (count == this.options.domains.length) {
-                    resolve();
-                }
+                this.domains[options.domain].setup()
+                    .then(() => {
+                        count++;
+                        if (count == this.options.domains.length) {
+                            resolve();
+                        }
+                    }, () => {Log.error('failed to initialise domain ' + options.domain)});
             });
         });
     }
